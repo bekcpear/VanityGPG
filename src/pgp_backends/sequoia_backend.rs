@@ -83,54 +83,21 @@ impl Backend for SequoiaBackend {
         let mut signer = self.primary_key.clone().into_keypair()?;
         let primary_key_packet = Key::V4(self.primary_key);
 
-        // Direct key signature and the secret key
-        let direct_key_signature = SignatureBuilder::new(SignatureType::DirectKey)
-            .set_hash_algo(HashAlgorithm::SHA512)
-            .set_features(Features::sequoia())?
-            .set_key_flags(KeyFlags::empty().set_certification().set_signing())?
-            .set_signature_creation_time(creation_time)?
-            .set_key_validity_period(None)?
-            .set_preferred_hash_algorithms(vec![HashAlgorithm::SHA512, HashAlgorithm::SHA256])?
-            .set_preferred_symmetric_algorithms(vec![
-                SymmetricAlgorithm::AES256,
-                SymmetricAlgorithm::AES128,
-            ])?
-            .sign_direct_key(&mut signer, Some(primary_key_packet.parts_as_public()))?;
         packets.push(Packet::SecretKey(primary_key_packet));
-        packets.push(direct_key_signature.clone().into());
 
         // Build certificate
         let mut cert = Cert::from_packets(packets.into_iter())?;
 
         // UID
         if let Some(uid_string) = uid.get_id() {
-            let uid_signature_builder = SignatureBuilder::from(direct_key_signature)
+            let uid_signature_builder = SignatureBuilder::new(SignatureType::PositiveCertification)
                 .set_signature_creation_time(creation_time)?
                 .set_revocation_key(vec![])? // Remove revocation certificate
-                .set_type(SignatureType::PositiveCertification)
                 .set_hash_algo(HashAlgorithm::SHA512);
             let uid_packet = SequoiaUserID::from(uid_string);
             let uid_signature = uid_packet.bind(&mut signer, &cert, uid_signature_builder)?;
             cert = cert.insert_packets(vec![Packet::from(uid_packet), uid_signature.into()])?;
         }
-
-        // Encryption subkey
-        let mut subkey = generate_key(self.cipher_suite.get_encryption_key_algorithm(), false)?
-            .parts_into_secret()?
-            .role_into_subordinate();
-        subkey.set_creation_time(creation_time)?;
-        let subkey_packet = Key::V4(subkey);
-        let subkey_signature_builder = SignatureBuilder::new(SignatureType::SubkeyBinding)
-            .set_signature_creation_time(creation_time)?
-            .set_hash_algo(HashAlgorithm::SHA512)
-            .set_features(Features::sequoia())?
-            .set_key_flags(KeyFlags::empty().set_storage_encryption())?
-            .set_key_validity_period(None)?;
-        let subkey_signature = subkey_packet.bind(&mut signer, &cert, subkey_signature_builder)?;
-        cert = cert.insert_packets(vec![
-            Packet::SecretSubkey(subkey_packet),
-            subkey_signature.into(),
-        ])?;
 
         if cert.unknowns().next().is_none() {
             // Get armored texts
