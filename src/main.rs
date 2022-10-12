@@ -297,7 +297,7 @@ fn main() -> Result<(), Error> {
             loop {
                 let fingerprint = key.get_fingerprint();
                 if pattern.is_match(&fingerprint) {
-                    warn!("({}): [{}] matched", thread_id, &fingerprint);
+                    warn!("({:2}): [{} {} {} {} {}] matched", thread_id, &fingerprint[..24], &fingerprint[24..28], &fingerprint[28..32], &fingerprint[32..36], &fingerprint[36..]);
                     counter_cloned.count_success();
                     key.save_key(&user_id_cloned, dry_run).unwrap_or(());
                     key = Key::new(DefaultBackend::new(cipher_suite.clone()).unwrap());
